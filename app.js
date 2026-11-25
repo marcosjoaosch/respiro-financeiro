@@ -1,5 +1,5 @@
-import {emptyState,today,monthOf,id,money,cents,remaining,amountFor,paidFor,balance,projection,spendable,validateState,addActual,installmentAmounts} from './engine.js?v=2';
-import {configured,connect,login,logout,saveRemote} from './sync.js?v=2';
+import {emptyState,today,monthOf,id,money,cents,remaining,amountFor,paidFor,balance,projection,spendable,validateState,addActual,installmentAmounts} from './engine.js?v=3';
+import {configured,connect,login,logout,saveRemote} from './sync.js?v=3';
 const KEY='respiro-local-v1';
 let state=emptyState(),screen='home',selectedMonth=monthOf(today()),syncStatus=configured?'loading':'local',busy=false,remoteUid='',remoteMessage='';
 let localPresent=false;

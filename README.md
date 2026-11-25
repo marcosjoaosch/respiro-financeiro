@@ -18,7 +18,7 @@ Não precisa de dependências ou build.
 Preencha `firebase-config.js` com a configuração pública do projeto Web.
 Ative Google no Firebase Authentication e adicione o domínio do Pages aos domínios autorizados.
 Crie Firestore Standard `(default)` em produção e publique `firestore.rules`.
-As regras começam bloqueadas: substitua o UID de exemplo pelo UID do proprietário e use o mesmo em `ownerUid`.
+O arquivo de regras é apenas um modelo bloqueado. Configure o identificador do proprietário diretamente nas regras privadas do console Firestore. Não publique identificadores de contas no código. A aplicação confia nas regras do banco para autorizar cada operação.
 Não vincule Cloud Billing para usar esta versão no plano Spark.
 
 ## Dados pessoais
