@@ -43,3 +43,15 @@ Backup por exportação manual. Limite interno de 800 KB de registros nesta vers
 - **Editar** altera o valor ou a data de uma previsão, inclusive futura.
 
 As datas de pagamentos realizados não podem estar no futuro.
+
+## Contas mensais e prazo final
+
+Em Contas, abra Nova previsão ou Editar numa conta existente. Em Repetir esta previsão, escolha um mês final (incluído) ou uma quantidade de meses (inclui o mês inicial; até 120).
+
+O formulário mostra um resumo antes de salvar e pede confirmação para aplicar a repetição. Meses com o mesmo nome e tipo são reutilizados, mantendo valores, datas e registros. Meses que faltam recebem o valor informado. Vencimentos no dia 29, 30 ou 31 são ajustados ao último dia de meses mais curtos. Datas criadas ficam a confirmar.
+
+A opção Esta conta termina no mês final retira apenas previsões posteriores sem registros, a partir do mês atual. O resumo lista os meses afetados; histórico de pagamentos e compras vinculadas é preservado. Desmarque a opção para apenas completar o intervalo sem encerrar as previsões seguintes.
+
+Só este mês edita apenas a previsão aberta. A repetição altera o planejamento: não registra pagamentos e não movimenta saldo real. Os registros gerados são sincronizados como as demais previsões.
+
+Verificação dos cálculos: `node --test tests/engine.test.mjs`.

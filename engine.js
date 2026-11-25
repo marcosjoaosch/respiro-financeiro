@@ -53,6 +53,7 @@ export function validateState(s){
  for(const k of ['plans','actuals','cards','notes','loans'])if(!Array.isArray(s[k])||s[k].length>6000)throw Error('Arquivo inválido ou grande demais.');
  const ids=new Set();for(const r of [...s.plans,...s.actuals,...s.cards]){if(typeof r.id!=='string'||ids.has(r.id))throw Error('Registro duplicado.');ids.add(r.id);if(!Number.isSafeInteger(r.amount)||r.amount<0||r.amount>100000000000)throw Error('Valor inválido.');if(typeof r.title!=='string'||!r.title.trim()||r.title.length>180)throw Error('Descrição inválida.');}
  const pmap=new Map(s.plans.map(p=>[p.id,p]));
+ for(const p of s.plans){if(p.seriesId!==undefined&&(typeof p.seriesId!=='string'||!p.seriesId||p.seriesId.length>100))throw Error('Repetição inválida.');if(p.repeatEndMonth!==undefined&&!validMonth(p.repeatEndMonth))throw Error('Mês final da repetição inválido.');}
  for(const p of s.plans){if(!['income','expense','invoice','reserve'].includes(p.kind)||!/^\d{4}-(0[1-9]|1[0-2])$/.test(p.month)||typeof p.dateConfirmed!=='boolean'||(p.dateConfirmed&&!p.dueDate)||(p.dueDate&&(!validDate(p.dueDate)||monthOf(p.dueDate)!==p.month)))throw Error('Previsão inválida.');}
  for(const a of s.actuals){if(!kinds.includes(a.kind)||!validDate(a.date)||a.date<s.opening.date||a.date>today())throw Error('Lançamento realizado precisa estar entre o saldo inicial e hoje.');if(a.planId&&(!pmap.has(a.planId)||pmap.get(a.planId).kind!==a.kind))throw Error('Vínculo de conta inválido.');}
  for(const c of s.cards){if(!pmap.has(c.invoiceId)||pmap.get(c.invoiceId).kind!=='invoice'||!validDate(c.date)||c.date>today()||c.date<s.opening.date)throw Error('Compra ou fatura inválida.');}
@@ -68,3 +69,49 @@ export function addActual(s,a){
 }
 export function summary(s){return {plans:s.plans.length,actuals:s.actuals.length,cards:s.cards.length};}
 export function installmentAmounts(total,count){if(!Number.isSafeInteger(total)||!Number.isInteger(count)||count<1||count>36||total<count)throw Error('Confira o valor e as parcelas.');const each=Math.floor(total/count);return Array.from({length:count},(_,i)=>i===count-1?total-each*(count-1):each);}
+
+const validMonth=m=>typeof m==='string'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+const monthNumber=m=>Number(m.slice(0,4))*12+Number(m.slice(5,7))-1;
+export function addMonths(month,count){
+ if(!validMonth(month)||!Number.isInteger(count)||count<0||count>119)throw Error('Confira o mês inicial e a quantidade (1 a 120 meses).');
+ const n=monthNumber(month)+count,year=Math.floor(n/12);
+ if(year>9999)throw Error('Mês final inválido.');
+ return String(year).padStart(4,'0')+'-'+String(n%12+1).padStart(2,'0');
+}
+const normalizedTitle=t=>t.trim().normalize('NFC').toLocaleLowerCase('pt-BR').replace(/\s+/g,' ');
+export function savePlan(s,record,{endMonth=null,endsAtFinalMonth=false}={}){
+ const next=structuredClone(s),original=s.plans.find(p=>p.id===record.id);
+ if(original&&original.kind!==record.kind)throw Error('O tipo de uma previsão existente não pode mudar.');
+ const duplicate=s.plans.find(p=>p.id!==record.id&&p.month===record.month&&p.kind===record.kind&&normalizedTitle(p.title)===normalizedTitle(record.title));
+ if(duplicate)throw Error('Já existe uma previsão com esse nome e tipo neste mês. Abra Editar nela para evitar contar duas vezes.');
+ if(original&&paidFor(s,original)>record.amount+(original.kind==='invoice'?amountFor(s,original)-original.amount:0))throw Error('A previsão não pode ficar abaixo do valor já registrado.');
+ const source={...original,...record};
+ if(original)next.plans[next.plans.findIndex(p=>p.id===record.id)]=source;else next.plans.push(source);
+ const report={months:1,created:original?0:1,kept:0,removed:[],protected:[]};
+ if(endMonth!==null){
+  if(!validMonth(record.month)||!validMonth(endMonth))throw Error('Informe o mês inicial e o último mês da repetição.');
+  const count=monthNumber(endMonth)-monthNumber(record.month)+1;
+  if(count<1||count>120)throw Error('O último mês deve ser igual ou posterior ao inicial, com no máximo 120 meses.');
+  report.months=count;
+  const seriesId=original?.seriesId||id(),names=new Set([normalizedTitle(record.title),normalizedTitle(original?.title||record.title)]);
+  const matches=p=>p.kind===record.kind&&(p.seriesId===seriesId||(!p.seriesId&&names.has(normalizedTitle(p.title))));
+  const day=record.dueDate?Number(record.dueDate.slice(8,10)):null;
+  source.seriesId=seriesId;source.repeatEndMonth=endMonth;
+  for(let i=1;i<count;i++){
+   const month=addMonths(record.month,i),existing=next.plans.filter(p=>matches(p)&&p.month===month);
+   if(existing.length>1)throw Error('Há mais de uma previsão com esse nome em '+month+'. Confira esse mês antes de repetir.');
+   if(existing.length){Object.assign(existing[0],{seriesId,repeatEndMonth:endMonth});report.kept++;continue;}
+   const lastDay=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).getUTCDate();
+   next.plans.push({id:id(),title:record.title,kind:record.kind,amount:record.amount,month,dueDate:day?month+'-'+String(Math.min(day,lastDay)).padStart(2,'0'):null,dateConfirmed:false,seriesId,repeatEndMonth:endMonth});
+   report.created++;
+  }
+  if(endsAtFinalMonth){
+   next.plans=next.plans.filter(p=>{
+    if(!matches(p)||p.month<=endMonth||p.month<monthOf(today()))return true;
+    if(next.actuals.some(a=>a.planId===p.id)||next.cards.some(c=>c.invoiceId===p.id)){report.protected.push(p);return true;}
+    report.removed.push(p);return false;
+   });
+  }
+ }
+ validateState(next);return {state:next,report};
+}
