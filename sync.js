@@ -1,5 +1,5 @@
-import {firebaseConfig,ownerUid} from './firebase-config.js';
-import {validateState} from './engine.js';
+import {firebaseConfig,ownerUid} from './firebase-config.js?v=2';
+import {validateState} from './engine.js?v=2';
 export const configured=Boolean(firebaseConfig?.apiKey&&firebaseConfig?.projectId);
 let auth,db,f,au,user=null,unsubscribe=null,revision=0,ready=false,handler;
 export async function connect(onChange){
