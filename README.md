@@ -55,3 +55,11 @@ A opção Esta conta termina no mês final retira apenas previsões posteriores 
 Só este mês edita apenas a previsão aberta. A repetição altera o planejamento: não registra pagamentos e não movimenta saldo real. Os registros gerados são sincronizados como as demais previsões.
 
 Verificação dos cálculos: `node --test tests/engine.test.mjs`.
+
+## Simular uma compra
+
+A aba Simular abre vazia e calcula somente depois de clicar em Simular. Informe o total final (com frete e juros) e escolha pagamento à vista ou cartão. À vista, escolha a data. No cartão, escolha o número de parcelas e a primeira fatura; opcionalmente informe o limite disponível. Os centavos são ajustados na última parcela.
+
+O resultado compara sobras mensais e saldos acumulados com e sem a compra. A reserva não é usada para cobrir déficits. O caixa entre recebimentos é avaliado apenas com saldo e datas confirmados, sem previsões vencidas pendentes ou meses sem planejamento. No mesmo dia, saídas são consideradas antes das entradas. Ausência de dados gera avisos. O app não conhece o banco nem confirma fechamento ou limite automaticamente.
+
+O simulador não chama o salvamento e não altera compras, previsões ou pagamentos. Seus campos e resultados ficam apenas na memória da página; recarregar limpa a simulação. Mudanças no planejamento invalidam o resultado, que precisa ser calculado novamente.

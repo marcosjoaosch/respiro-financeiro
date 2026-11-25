@@ -7,3 +7,6 @@
 .stat-label svg{width:20px;height:20px;flex-shrink:0}
 
 ::selection{background:#285d48;color:#f3fff8}input::placeholder,textarea::placeholder{color:#93a4b3;opacity:1}
+
+.simulation-layout{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:22px;align-items:start}.simulation-metrics{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}.simulation-metrics>div{padding:16px;border:1px solid var(--line);border-radius:10px;background:#101923}.simulation-metrics span,.simulation-metrics small{display:block;color:var(--muted);font-size:.875rem;line-height:1.5}.simulation-metrics strong{display:block;font-size:1.5rem;margin:8px 0}.simulation-layout .actions{margin-top:20px}.simulation-layout [hidden]{display:none!important}#simulation-results{min-width:0}
+@media(max-width:1150px){.simulation-layout{grid-template-columns:1fr}}@media(max-width:740px){.simulation-metrics{grid-template-columns:1fr}.simulation-metrics strong{font-size:1.4rem}.nav button{min-width:0;font-size:.66rem}}

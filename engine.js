@@ -115,3 +115,69 @@ export function savePlan(s,record,{endMonth=null,endsAtFinalMonth=false}={}){
  }
  validateState(next);return {state:next,report};
 }
+
+// Somente comparação em memória: não cria previsões, compras nem pagamentos.
+export function simulatePurchase(s,input,asOf=today()){
+ validateState(s);
+ const {total,method}=input;
+ if(!Number.isSafeInteger(total)||total<=0||total>100000000000)throw Error('Informe o preço total final da compra.');
+ if(!['cash','card'].includes(method))throw Error('Escolha a forma de pagamento.');
+ const currentMonth=monthOf(asOf),costs=[],warnings=[];
+ let firstMonth,firstInvoice=null;
+ if(method==='cash'){
+  if(!validDate(input.date)||input.date<asOf)throw Error('Escolha uma data de pagamento a partir de hoje.');
+  firstMonth=monthOf(input.date);costs.push({month:firstMonth,date:input.date,amount:total});
+ }else{
+  firstInvoice=s.plans.find(p=>p.id===input.invoiceId&&p.kind==='invoice');
+  if(!firstInvoice||firstInvoice.month<currentMonth)throw Error('Escolha a primeira fatura, deste mês em diante.');
+  firstMonth=firstInvoice.month;
+  const amounts=installmentAmounts(total,input.count);
+  amounts.forEach((amount,i)=>{
+   const month=addMonths(firstMonth,i);
+   const invoices=s.plans.filter(p=>p.kind==='invoice'&&p.month===month),candidates=invoices.filter(p=>p.title===firstInvoice.title);
+   const invoice=i===0?firstInvoice:candidates.length===1?candidates[0]:invoices.length===1?invoices[0]:null;
+   costs.push({month,amount,date:invoice?.dateConfirmed?invoice.dueDate:null});
+  });
+ }
+ const baseline=projection(s),baseMap=new Map(baseline.map(p=>[p.month,p]));
+ const lastMonth=[costs.at(-1).month,...baseline.filter(p=>p.month>=currentMonth).map(p=>p.month)].sort().at(-1);
+ const horizon=monthNumber(lastMonth)-monthNumber(currentMonth)+1;
+ if(horizon<1||horizon>120)throw Error('Esta simulação precisa ficar dentro dos próximos 120 meses.');
+ let baseCash=baseline.filter(p=>p.month<currentMonth).at(-1)?.cash??s.opening.cash,spent=0;
+ const rows=[];
+ for(let i=0;i<horizon;i++){
+  const month=addMonths(currentMonth,i),p=baseMap.get(month),cost=costs.filter(c=>c.month===month).reduce((n,c)=>n+c.amount,0);
+  if(p)baseCash=p.cash;spent+=cost;
+  rows.push({month,cost,beforeFlow:p?.flow??0,afterFlow:(p?.flow??0)-cost,beforeCash:baseCash,afterCash:baseCash-spent,reserve:p?.reserve??rows.at(-1)?.reserve??s.opening.reserve,covered:!!p});
+ }
+ const uncovered=rows.filter(r=>!r.covered);
+ if(uncovered.length)warnings.push('Há meses sem planejamento cadastrado. Complete rendas e contas desses meses antes de decidir.');
+ if(!s.opening.confirmed)warnings.push('Confirme teu saldo inicial em Ajustes.');
+ const pending=s.plans.filter(p=>p.month<=lastMonth&&remaining(s,p)>0);
+ const unconfirmed=pending.filter(p=>!p.dueDate||!p.dateConfirmed);
+ const overdue=pending.filter(p=>p.dueDate&&p.dueDate<asOf);
+ const missingInvoices=costs.filter(c=>!c.date);
+ let timing={ready:false,minimumCash:null,minimumDate:null};
+ if(unconfirmed.length||missingInvoices.length)warnings.push('Confirme os vencimentos e as datas dos recebimentos para avaliar o caixa entre as quinzenas.');
+ if(overdue.length)warnings.push('Há previsões pendentes com data passada. Confira o que já foi pago ou recebido.');
+ if(s.opening.confirmed&&!unconfirmed.length&&!missingInvoices.length&&!overdue.length&&!uncovered.length){
+  const days=new Map();
+  const event=(date,amount,income=false)=>{const d=days.get(date)||{income:0,out:0};if(income)d.income+=amount;else d.out+=amount;days.set(date,d);};
+  pending.forEach(p=>event(p.dueDate,remaining(s,p),p.kind==='income'));
+  costs.forEach(c=>event(c.date,c.amount));
+  let cash=balance(s,asOf).cash,minimumCash=cash,minimumDate=asOf;
+  for(const [date,d] of [...days].sort(([a],[b])=>a.localeCompare(b))){cash-=d.out;if(cash<minimumCash){minimumCash=cash;minimumDate=date;}cash+=d.income;}
+  timing={ready:true,minimumCash,minimumDate};
+ }
+ let limit=null;
+ if(method==='card'){
+  if(input.cardLimit!==null&&input.cardLimit!==undefined){
+   if(!Number.isSafeInteger(input.cardLimit)||input.cardLimit<0)throw Error('Confira o limite disponível no cartão.');
+   limit={available:input.cardLimit,enough:input.cardLimit>=total};
+  }else warnings.push('Limite do cartão não informado. Confira o valor disponível no banco.');
+ }
+ const negativeMonths=rows.filter(r=>r.afterCash<0),negativeFlows=rows.filter(r=>r.afterFlow<0);
+ if(negativeFlows.length)warnings.push('Há meses em que as saídas superam as entradas. Eles dependem de sobras acumuladas.');
+ const shortfall=negativeMonths.length>0||(timing.ready&&timing.minimumCash<0)||limit?.enough===false;
+ return {rows,costs,total,firstMonth,lastPurchaseMonth:costs.at(-1).month,warnings,timing,limit,negativeMonths,negativeFlows,status:shortfall?'shortfall':warnings.length||!timing.ready?'review':'projected',lowestMonth:rows.reduce((a,b)=>b.afterCash<a.afterCash?b:a),tightestMonth:rows.reduce((a,b)=>b.afterFlow<a.afterFlow?b:a)};
+}

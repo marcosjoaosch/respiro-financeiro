@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyState,today,cents,balance,projection,remaining,addActual,spendable,validateState,installmentAmounts,savePlan,addMonths} from '../engine.js';
+import {emptyState,today,cents,balance,projection,remaining,addActual,spendable,validateState,installmentAmounts,savePlan,addMonths,simulatePurchase} from '../engine.js';
 const make=()=>{const s=emptyState();s.opening={date:today(),cash:100000,reserve:0,confirmed:true};return s;};
 const plan=(s,overrides={})=>{const p={id:'p',title:'Conta',kind:'expense',amount:20000,month:today().slice(0,7),dueDate:today(),dateConfirmed:true,...overrides};s.plans.push(p);return p;};
 const actual=(overrides={})=>({id:'a',title:'Pagamento',kind:'expense',amount:20000,date:today(),planId:'p',...overrides});
@@ -54,4 +54,34 @@ test('intervalos inválidos, datas incompatíveis e repetições ambíguas são 
  const s=make(),record=recurring();assert.throws(()=>savePlan(s,record,{endMonth:'2026-12'}));assert.throws(()=>savePlan(s,record,{endMonth:'2027-13'}));assert.throws(()=>savePlan(s,record,{endMonth:'2037-01'}));assert.throws(()=>addMonths('2027-01',120));assert.equal(addMonths('2027-12',1),'2028-01');
  assert.throws(()=>savePlan(s,recurring({dueDate:'2027-02-01'}),{endMonth:'2027-02'}));
  s.plans=[recurring({id:'x',month:'2027-02',dueDate:null,dateConfirmed:false}),recurring({id:'y',month:'2027-02',dueDate:null,dateConfirmed:false})];assert.throws(()=>savePlan(s,record,{endMonth:'2027-03'}),/mais de uma/);
+});
+const simulationFixture=()=>{
+ const s=make(),month=today().slice(0,7),d=today();s.opening.cash=100000;
+ s.plans=[{id:'salary-sim',title:'Renda de teste',kind:'income',amount:200000,month,dueDate:d,dateConfirmed:true},{id:'invoice-sim',title:'Cartão de teste',kind:'invoice',amount:50000,month,dueDate:d,dateConfirmed:true}];return s;
+};
+test('simulação à vista muda somente comparação, sem mutar saldo, reserva ou dados',()=>{
+ const s=simulationFixture(),before=structuredClone(s),r=simulatePurchase(s,{method:'cash',total:10000,date:today()});
+ assert.deepEqual(s,before);assert.equal(r.rows[0].beforeFlow-r.rows[0].afterFlow,10000);assert.equal(r.rows[0].beforeCash-r.rows[0].afterCash,10000);assert.equal(r.rows[0].reserve,0);assert.equal(balance(s).cash,100000);
+});
+test('simulação parcelada soma exatamente o total, sem duplicar faturas existentes',()=>{
+ const s=simulationFixture(),month=today().slice(0,7);for(let i=1;i<3;i++)s.plans.push({id:'future-'+i,title:'Cartão de teste',kind:'invoice',amount:30000,month:addMonths(month,i),dueDate:null,dateConfirmed:false});
+ const before=structuredClone(s),r=simulatePurchase(s,{method:'card',total:10000,count:3,invoiceId:'invoice-sim',cardLimit:20000});
+ assert.deepEqual(r.costs.map(c=>c.amount),[3333,3333,3334]);assert.equal(r.rows.reduce((t,p)=>t+p.cost,0),10000);assert.equal(r.rows.at(-1).beforeCash-r.rows.at(-1).afterCash,10000);assert.deepEqual(s,before);assert.equal(r.limit.enough,true);
+});
+test('simulação avisa sobre datas pendentes, meses sem previsão e limite insuficiente',()=>{
+ const s=simulationFixture(),r=simulatePurchase(s,{method:'card',total:10000,count:2,invoiceId:'invoice-sim',cardLimit:5000});
+ assert.equal(r.status,'shortfall');assert.equal(r.timing.ready,false);assert.equal(r.rows.at(-1).covered,false);assert.ok(r.warnings.some(w=>w.includes('sem planejamento')));
+});
+test('simulação identifica falta de caixa entre recebimentos mesmo com sobra mensal',()=>{
+ const s=simulationFixture();s.opening.cash=1000;s.plans[1].amount=100;s.plans[0].dueDate=today();
+ const r=simulatePurchase(s,{method:'cash',total:2000,date:today()});assert.ok(r.rows[0].afterCash>0);assert.equal(r.timing.ready,true);assert.ok(r.timing.minimumCash<0);assert.equal(r.status,'shortfall');
+});
+test('simulação identifica déficit acumulado e não retira dinheiro da reserva',()=>{
+ const s=simulationFixture();s.opening.reserve=900000;const r=simulatePurchase(s,{method:'cash',total:400000,date:today()});assert.equal(r.status,'shortfall');assert.ok(r.negativeMonths.length);assert.equal(r.rows[0].reserve,900000);
+});
+test('simulação não certifica caixa quando faltam confirmação do saldo ou datas',()=>{
+ const s=simulationFixture();s.opening.confirmed=false;s.plans[0].dateConfirmed=false;const r=simulatePurchase(s,{method:'cash',total:100,date:today()});assert.equal(r.timing.ready,false);assert.equal(r.status,'review');assert.ok(r.warnings.length>=2);
+});
+test('simulador rejeita entrada incompleta, fatura inválida e pagamento passado',()=>{
+ const s=simulationFixture();assert.throws(()=>simulatePurchase(s,{total:0,method:'cash',date:today()}));assert.throws(()=>simulatePurchase(s,{total:100,method:''}));assert.throws(()=>simulatePurchase(s,{total:100,method:'cash',date:'2000-01-01'}));assert.throws(()=>simulatePurchase(s,{total:100,method:'card',invoiceId:'missing',count:2}));assert.throws(()=>simulatePurchase(s,{total:100,method:'card',invoiceId:'invoice-sim',count:0}));
 });
