@@ -34,3 +34,12 @@ No modo Firebase, as alterações precisam de internet e a sessão deve ser ence
 O app não acessa bancos. Valores e vencimentos são atualizados manualmente.
 A previsão não garante dinheiro antes de um vencimento sem confirmar as datas.
 Backup por exportação manual. Limite interno de 800 KB de registros nesta versão.
+
+## Ações em Contas
+
+- **Pagar** registra uma despesa ou fatura já paga.
+- **Receber** registra dinheiro que já entrou.
+- **Guardar** registra dinheiro já separado para a reserva.
+- **Editar** altera o valor ou a data de uma previsão, inclusive futura.
+
+As datas de pagamentos realizados não podem estar no futuro.
