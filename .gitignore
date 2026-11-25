@@ -1,0 +1,6 @@
+PRIVADO/
+*.backup.json
+*.zip
+.env
+.env.*
+node_modules/
